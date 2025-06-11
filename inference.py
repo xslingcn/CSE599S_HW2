@@ -10,19 +10,74 @@ from model import GPTConfig, GPT
 
 # -----------------------------------------------------------------------------
 # Tokenizer class (must match the one used in training)
-class CharTokenizer:
-    def __init__(self, chars):
-        self.chars = sorted(list(set(chars)))
-        self.vocab_size = len(self.chars) + 1  # +1 for padding
-        self.char_to_idx = {ch: i for i, ch in enumerate(self.chars)}
-        self.idx_to_char = {i: ch for i, ch in enumerate(self.chars)}
-        self.pad_token = self.vocab_size - 1
+class NumberTokenizer:
+    def __init__(self, tokens_list):
+        """Initialize tokenizer from a list of tokens or equations."""
+        # If tokens_list is a list of equations, extract tokens
+        if tokens_list and isinstance(tokens_list[0], str) and any(op in tokens_list[0] for op in '+-*/='):
+            # Extract all unique tokens from equations
+            tokens = set()
+            
+            for equation in tokens_list:
+                # Parse equation to extract numbers and operators
+                current_num = ''
+                for char in equation:
+                    if char.isdigit():
+                        current_num += char
+                    else:
+                        if current_num:
+                            tokens.add(current_num)
+                            current_num = ''
+                        if char in '+-*/=':
+                            tokens.add(char)
+                
+                # Don't forget the last number
+                if current_num:
+                    tokens.add(current_num)
+            
+            # Sort tokens: operators first, then numbers sorted numerically
+            operators = ['+', '-', '*', '/', '=']
+            numbers = sorted([t for t in tokens if t.isdigit()], key=int)
+            
+            # Build vocabulary
+            self.tokens = operators + numbers
+        else:
+            # tokens_list is already a list of tokens
+            self.tokens = tokens_list
+            
+        self.vocab_size = len(self.tokens)
+        self.token_to_idx = {token: i for i, token in enumerate(self.tokens)}
+        self.idx_to_token = {i: token for i, token in enumerate(self.tokens)}
     
     def encode(self, text):
-        return [self.char_to_idx.get(ch, self.pad_token) for ch in text]
+        """Encode text into token indices."""
+        tokens = []
+        current_num = ''
+        
+        for char in text:
+            if char.isdigit():
+                current_num += char
+            else:
+                if current_num:
+                    if current_num in self.token_to_idx:
+                        tokens.append(self.token_to_idx[current_num])
+                    current_num = ''
+                if char in self.token_to_idx:
+                    tokens.append(self.token_to_idx[char])
+        
+        # Don't forget the last number
+        if current_num and current_num in self.token_to_idx:
+            tokens.append(self.token_to_idx[current_num])
+        
+        return tokens
     
     def decode(self, indices):
-        return ''.join([self.idx_to_char.get(idx, '') for idx in indices if idx != self.pad_token])
+        """Decode token indices back to text."""
+        result = ''
+        for idx in indices:
+            if idx in self.idx_to_token:
+                result += self.idx_to_token[idx]
+        return result
 
 # -----------------------------------------------------------------------------
 # Generation function
@@ -85,22 +140,20 @@ def main(args):
     # Load tokenizer
     tokenizer_chars = checkpoint.get('tokenizer_chars', None)
     if tokenizer_chars is None:
-        # Try to load from config
-        config_path = os.path.join(os.path.dirname(args.checkpoint), 'config.json')
-        if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            # Reconstruct tokenizer from data
-            data_dir = config.get('data_dir', '')
-            if os.path.exists(os.path.join(data_dir, 'train.txt')):
-                with open(os.path.join(data_dir, 'train.txt'), 'r') as f:
-                    train_data = f.read()
-                tokenizer_chars = sorted(list(set(train_data)))
-            else:
-                # Default character set for algorithmic tasks
-                tokenizer_chars = list('0123456789+-*/= \n')
-    
-    tokenizer = CharTokenizer(''.join(tokenizer_chars))
+        # Try to reconstruct tokenizer from data
+        data_dir = checkpoint.get('config', {}).get('data_dir', None)
+        if data_dir:
+            train_file = os.path.join(data_dir, 'train.txt')
+            with open(train_file, 'r') as f:
+                train_data = f.read().strip().split('\n')
+            # Create tokenizer from data
+            tokenizer = NumberTokenizer(train_data)
+        else:
+            # Fall back to a default tokenizer for arithmetic
+            default_tokens = ['+', '-', '*', '/', '='] + [str(i) for i in range(200)]
+            tokenizer = NumberTokenizer(default_tokens)
+    else:
+        tokenizer = NumberTokenizer(tokenizer_chars)
     print(f"Loaded tokenizer with vocabulary size: {tokenizer.vocab_size}")
     
     # Initialize model
@@ -202,7 +255,7 @@ def parse_args():
     
     # Generation arguments
     parser.add_argument('--prompts', type=str, nargs='+', default=None, help='Prompts for generation')
-    parser.add_argument('--max_new_tokens', type=int, default=20, help='Maximum tokens to generate')
+    parser.add_argument('--max_new_tokens', type=int, default=1, help='Maximum tokens to generate')
     parser.add_argument('--temperature', type=float, default=0.8, help='Sampling temperature')
     parser.add_argument('--top_k', type=int, default=50, help='Top-k sampling (None for no restriction)')
     

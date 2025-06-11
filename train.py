@@ -37,14 +37,13 @@ class AlgorithmicDataset(Dataset):
                 eq_pos = i
                 break
         
-        # Pad or truncate to block_size
-        if len(tokens) < self.block_size:
-            tokens = tokens + [self.tokenizer.pad_token] * (self.block_size - len(tokens))
-        else:
-            tokens = tokens[:self.block_size]
+        # Ensure we have at least 2 tokens for input/output
+        if len(tokens) < 2:
+            tokens = tokens + [0]  # Add a dummy token if too short
         
-        # Create attention mask (1 for real tokens, 0 for padding)
-        attention_mask = [1 if t != self.tokenizer.pad_token else 0 for t in tokens]
+        # Truncate if necessary (shouldn't happen for arithmetic)
+        if len(tokens) > self.block_size:
+            tokens = tokens[:self.block_size]
         
         # Create loss mask
         loss_mask = [0] * len(tokens)
@@ -54,18 +53,17 @@ class AlgorithmicDataset(Dataset):
             for i in range(min(self.mask_first_n, len(tokens))):
                 loss_mask[i] = 0
             for i in range(self.mask_first_n, len(tokens)):
-                if attention_mask[i] == 1:
-                    loss_mask[i] = 1
+                loss_mask[i] = 1
         else:
             # Normal mode: mask before '=' 
             if eq_pos >= 0:
                 for i in range(eq_pos + 1, len(tokens)):
-                    if attention_mask[i] == 1:
-                        loss_mask[i] = 1
+                    loss_mask[i] = 1
             else:
-                # If no '=' found, unmask all real tokens
-                loss_mask = attention_mask[:]
+                # If no '=' found, unmask all tokens
+                loss_mask = [1] * len(tokens)
         
+        # Create input/output sequences
         x = torch.tensor(tokens[:-1], dtype=torch.long)
         y = torch.tensor(tokens[1:], dtype=torch.long)
         mask = torch.tensor(loss_mask[1:], dtype=torch.float)
@@ -73,20 +71,70 @@ class AlgorithmicDataset(Dataset):
         return x, y, mask
 
 # -----------------------------------------------------------------------------
-# Simple character-level tokenizer
-class CharTokenizer:
-    def __init__(self, chars):
-        self.chars = sorted(list(set(chars)))
-        self.vocab_size = len(self.chars) + 1  # +1 for padding
-        self.char_to_idx = {ch: i for i, ch in enumerate(self.chars)}
-        self.idx_to_char = {i: ch for i, ch in enumerate(self.chars)}
-        self.pad_token = self.vocab_size - 1
+# Number-level tokenizer (tokenizes whole numbers as single tokens)
+class NumberTokenizer:
+    def __init__(self, data_list):
+        """Initialize tokenizer from a list of equations."""
+        # Extract all unique tokens (numbers and operators)
+        tokens = set()
+        
+        for equation in data_list:
+            # Parse equation to extract numbers and operators
+            current_num = ''
+            for char in equation:
+                if char.isdigit():
+                    current_num += char
+                else:
+                    if current_num:
+                        tokens.add(current_num)
+                        current_num = ''
+                    if char in '+-*/=':
+                        tokens.add(char)
+            
+            # Don't forget the last number
+            if current_num:
+                tokens.add(current_num)
+        
+        # Sort tokens: operators first, then numbers sorted numerically
+        operators = ['+', '-', '*', '/', '=']
+        numbers = sorted([t for t in tokens if t.isdigit()], key=int)
+        
+        # Build vocabulary
+        self.tokens = operators + numbers
+        self.vocab_size = len(self.tokens)
+        self.token_to_idx = {token: i for i, token in enumerate(self.tokens)}
+        self.idx_to_token = {i: token for i, token in enumerate(self.tokens)}
+        # No padding token needed for our use case
     
     def encode(self, text):
-        return [self.char_to_idx.get(ch, self.pad_token) for ch in text]
+        """Encode text into token indices."""
+        tokens = []
+        current_num = ''
+        
+        for char in text:
+            if char.isdigit():
+                current_num += char
+            else:
+                if current_num:
+                    if current_num in self.token_to_idx:
+                        tokens.append(self.token_to_idx[current_num])
+                    current_num = ''
+                if char in self.token_to_idx:
+                    tokens.append(self.token_to_idx[char])
+        
+        # Don't forget the last number
+        if current_num and current_num in self.token_to_idx:
+            tokens.append(self.token_to_idx[current_num])
+        
+        return tokens
     
     def decode(self, indices):
-        return ''.join([self.idx_to_char.get(idx, '') for idx in indices if idx != self.pad_token])
+        """Decode token indices back to text."""
+        result = ''
+        for idx in indices:
+            if idx in self.idx_to_token:
+                result += self.idx_to_token[idx]
+        return result
 
 # -----------------------------------------------------------------------------
 # Training functions
@@ -156,8 +204,7 @@ def train(args):
         val_data = f.read().strip().split('\n')
     
     # Create tokenizer
-    all_chars = ''.join(train_data + val_data)
-    tokenizer = CharTokenizer(all_chars)
+    tokenizer = NumberTokenizer(train_data + val_data)
     print(f"Vocabulary size: {tokenizer.vocab_size}")
     
     # Create datasets and dataloaders
@@ -263,7 +310,7 @@ def train(args):
                     'val_losses': val_losses,
                     'val_accuracies': val_accuracies,
                     'config': vars(args),
-                    'tokenizer_chars': tokenizer.chars
+                    'tokenizer_chars': tokenizer.tokens
                 }
                 
                 os.makedirs(args.out_dir, exist_ok=True)
@@ -284,7 +331,7 @@ def train(args):
         'val_losses': val_losses,
         'val_accuracies': val_accuracies,
         'config': vars(args),
-        'tokenizer_chars': tokenizer.chars
+        'tokenizer_chars': tokenizer.tokens
     }
     torch.save(checkpoint, os.path.join(args.out_dir, 'final_model.pt'))
     print(f"Saved final model to {os.path.join(args.out_dir, 'final_model.pt')}")
@@ -295,23 +342,77 @@ def train(args):
     
     # Save training curves
     import matplotlib.pyplot as plt
+    import matplotlib.ticker as ticker
+    
     plt.figure(figsize=(12, 4))
     
+    # Extract experiment details from data_dir and batch size
+    data_parts = args.data_dir.split('/')
+    operation_moduli = data_parts[-1] if len(data_parts) > 0 else "Unknown"
+    
+    # Parse operation and moduli from the folder name (e.g., "divide_mod97")
+    if '_mod' in operation_moduli:
+        operation, moduli_str = operation_moduli.split('_mod')
+        operation_title = operation.capitalize()
+        moduli = moduli_str
+    else:
+        operation_title = "Unknown"
+        moduli = "Unknown"
+    
+    experiment_name = f"{operation_title} mod {moduli} (batch size={args.batch_size})"
+    
     plt.subplot(1, 2, 1)
-    plt.plot(range(0, len(train_losses) * args.log_interval, args.log_interval), train_losses, label='Train Loss')
-    plt.plot(range(0, len(val_losses) * args.eval_interval, args.eval_interval), val_losses, label='Val Loss')
-    plt.xlabel('Step')
+    train_steps = [i * args.log_interval for i in range(len(train_losses))]
+    val_steps = [i * args.eval_interval for i in range(len(val_losses))]
+    
+    # Filter out step 0 for log scale
+    train_steps_plot = [s for s in train_steps if s > 0]
+    train_losses_plot = [train_losses[i] for i, s in enumerate(train_steps) if s > 0]
+    val_steps_plot = [s for s in val_steps if s > 0]
+    val_losses_plot = [val_losses[i] for i, s in enumerate(val_steps) if s > 0]
+    
+    plt.plot(train_steps_plot, train_losses_plot, label='Train Loss')
+    plt.plot(val_steps_plot, val_losses_plot, label='Val Loss')
+    plt.xlabel('Optimization Steps')
     plt.ylabel('Loss')
+    plt.xscale('log')
+    
+    # Set x-axis limits based on actual data range
+    if train_steps_plot and val_steps_plot:
+        min_step = min(train_steps_plot[0], val_steps_plot[0]) if val_steps_plot else train_steps_plot[0]
+        max_step = max(train_steps_plot[-1], val_steps_plot[-1]) if val_steps_plot else train_steps_plot[-1]
+        plt.xlim(min_step * 0.9, max_step * 1.1)  # Add 10% padding
+    
+    # Custom tick formatter for clean exponential notation
+    plt.gca().xaxis.set_major_locator(ticker.LogLocator(base=10))
+    plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f'$10^{{{int(np.log10(x))}}}$' if x >= 10 and np.log10(x) % 1 == 0 else f'{int(x)}'))
     plt.legend()
-    plt.title('Training and Validation Loss')
+    plt.title(f'Training and Validation Loss\n{experiment_name}')
+    plt.grid(True, alpha=0.3)
     
     plt.subplot(1, 2, 2)
-    plt.plot(range(0, len(train_accuracies) * args.log_interval, args.log_interval), train_accuracies, label='Train Acc')
-    plt.plot(range(0, len(val_accuracies) * args.eval_interval, args.eval_interval), val_accuracies, label='Val Acc')
-    plt.xlabel('Step')
+    train_acc_plot = [train_accuracies[i] for i, s in enumerate(train_steps) if s > 0]
+    val_acc_plot = [val_accuracies[i] for i, s in enumerate(val_steps) if s > 0]
+    
+    plt.plot(train_steps_plot, train_acc_plot, label='Train Acc')
+    plt.plot(val_steps_plot, val_acc_plot, label='Val Acc')
+    plt.xlabel('Optimization Steps')
     plt.ylabel('Accuracy')
+    plt.xscale('log')
+    
+    # Set x-axis limits based on actual data range
+    if train_steps_plot and val_steps_plot:
+        min_step = min(train_steps_plot[0], val_steps_plot[0]) if val_steps_plot else train_steps_plot[0]
+        max_step = max(train_steps_plot[-1], val_steps_plot[-1]) if val_steps_plot else train_steps_plot[-1]
+        plt.xlim(min_step * 0.9, max_step * 1.1)  # Add 10% padding
+    
+    # Custom tick formatter for clean exponential notation
+    plt.gca().xaxis.set_major_locator(ticker.LogLocator(base=10))
+    plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f'$10^{{{int(np.log10(x))}}}$' if x >= 10 and np.log10(x) % 1 == 0 else f'{int(x)}'))
     plt.legend()
-    plt.title('Training and Validation Accuracy')
+    plt.title(f'Training and Validation Accuracy\n{experiment_name}')
+    plt.ylim(0, 1.05)
+    plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
     plt.savefig(os.path.join(args.out_dir, 'training_curves.png'))

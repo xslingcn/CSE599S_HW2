@@ -33,7 +33,7 @@ def generate_modular_arithmetic_data(
             for b in range(p):
                 c = (a + b) % p
                 equation = f"{a}+{b}={c}"
-                equations.append(f"<bos>{equation}<eos>")
+                equations.append(equation)
     
     elif operation == 'subtract':
         # Generate all possible subtraction equations
@@ -41,7 +41,7 @@ def generate_modular_arithmetic_data(
             for b in range(p):
                 c = (a - b) % p
                 equation = f"{a}-{b}={c}"
-                equations.append(f"<bos>{equation}<eos>")
+                equations.append(equation)
     
     elif operation == 'divide':
         # Generate division equations
@@ -52,7 +52,7 @@ def generate_modular_arithmetic_data(
                 c = a
                 a = (b * c) % p  # Compute a such that a/b ≡ c (mod p)
                 equation = f"{a}/{b}={c}"
-                equations.append(f"<bos>{equation}<eos>")
+                equations.append(equation)
     
     else:
         raise ValueError(f"Unknown operation: {operation}")
