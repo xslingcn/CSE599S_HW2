@@ -71,26 +71,6 @@ def generate_modular_arithmetic_data(
     
     return train_data, val_data, test_data
 
-def gcd(a: int, b: int) -> int:
-    """Compute greatest common divisor"""
-    while b:
-        a, b = b, a % b
-    return a
-
-def mod_inverse(a: int, m: int) -> int:
-    """Compute modular inverse of a modulo m using extended Euclidean algorithm"""
-    if gcd(a, m) != 1:
-        raise ValueError(f"{a} has no inverse modulo {m}")
-    
-    # Extended Euclidean Algorithm
-    m0, x0, x1 = m, 0, 1
-    while a > 1:
-        q = a // m
-        m, a = a % m, m
-        x0, x1 = x1 - q * x0, x0
-    
-    return x1 + m0 if x1 < 0 else x1
-
 def save_data(data: List[str], filepath: str):
     """Save data to a text file"""
     with open(filepath, 'w') as f:
