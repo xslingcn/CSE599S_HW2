@@ -13,8 +13,6 @@ from torch.utils.data import Dataset, DataLoader
 
 from model import GPTConfig, GPT
 
-# -----------------------------------------------------------------------------
-# Dataset class for algorithmic tasks
 class AlgorithmicDataset(Dataset):
     def __init__(self, data, tokenizer, block_size, mask_first_n=0):
         self.data = data
@@ -70,12 +68,23 @@ class AlgorithmicDataset(Dataset):
         
         return x, y, mask
 
-# -----------------------------------------------------------------------------
-# Number-level tokenizer (tokenizes whole numbers as single tokens)
+class CharTokenizer:
+    def __init__(self, chars):
+        self.chars = sorted(list(set(chars)))
+        self.vocab_size = len(self.chars) + 1  # +1 for padding
+        self.char_to_idx = {ch: i for i, ch in enumerate(self.chars)}
+        self.idx_to_char = {i: ch for i, ch in enumerate(self.chars)}
+        self.pad_token = self.vocab_size - 1
+    
+    def encode(self, text):
+        return [self.char_to_idx.get(ch, self.pad_token) for ch in text]
+    
+    def decode(self, indices):
+        return ''.join([self.idx_to_char.get(idx, '') for idx in indices if idx != self.pad_token])
+
 class NumberTokenizer:
     def __init__(self, data_list):
         """Initialize tokenizer from a list of equations."""
-        # Extract all unique tokens (numbers and operators)
         tokens = set()
         
         for equation in data_list:
@@ -91,11 +100,9 @@ class NumberTokenizer:
                     if char in '+-*/=':
                         tokens.add(char)
             
-            # Don't forget the last number
             if current_num:
                 tokens.add(current_num)
         
-        # Sort tokens: operators first, then numbers sorted numerically
         operators = ['+', '-', '*', '/', '=']
         numbers = sorted([t for t in tokens if t.isdigit()], key=int)
         
@@ -104,7 +111,6 @@ class NumberTokenizer:
         self.vocab_size = len(self.tokens)
         self.token_to_idx = {token: i for i, token in enumerate(self.tokens)}
         self.idx_to_token = {i: token for i, token in enumerate(self.tokens)}
-        # No padding token needed for our use case
     
     def encode(self, text):
         """Encode text into token indices."""
@@ -122,7 +128,6 @@ class NumberTokenizer:
                 if char in self.token_to_idx:
                     tokens.append(self.token_to_idx[char])
         
-        # Don't forget the last number
         if current_num and current_num in self.token_to_idx:
             tokens.append(self.token_to_idx[current_num])
         
@@ -136,8 +141,6 @@ class NumberTokenizer:
                 result += self.idx_to_token[idx]
         return result
 
-# -----------------------------------------------------------------------------
-# Training functions
 def get_batch(dataloader_iter, dataloader, device):
     try:
         x, y, mask = next(dataloader_iter)
@@ -182,8 +185,6 @@ def estimate_loss(model, val_loader, ctx, device, config):
     model.train()
     return np.mean(losses), np.mean(accuracies)
 
-# -----------------------------------------------------------------------------
-# Main training function
 def train(args):
     # Set random seed for reproducibility
     torch.manual_seed(args.seed)
@@ -204,7 +205,19 @@ def train(args):
         val_data = f.read().strip().split('\n')
     
     # Create tokenizer
-    tokenizer = NumberTokenizer(train_data + val_data)
+    sample_data = train_data[0] if train_data else ""
+    is_arithmetic = any(op in sample_data for op in ['+', '-', '/', '='])
+    
+    if is_arithmetic:
+        # Use number tokenizer for arithmetic data
+        tokenizer = NumberTokenizer(train_data + val_data)
+        print(f"Using NumberTokenizer for arithmetic data")
+    else:
+        # Use character tokenizer for text data
+        all_chars = ''.join(train_data + val_data)
+        tokenizer = CharTokenizer(all_chars)
+        print(f"Using CharTokenizer for text data")
+    
     print(f"Vocabulary size: {tokenizer.vocab_size}")
     
     # Create datasets and dataloaders
@@ -239,7 +252,7 @@ def train(args):
     )
     
     # Initialize GradScaler for mixed precision
-    scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+    scaler = torch.cuda.amp.GradScaler('cuda', enabled=(dtype == 'float16'))
     
     # Training loop
     train_loader_iter = iter(train_loader)
@@ -310,7 +323,8 @@ def train(args):
                     'val_losses': val_losses,
                     'val_accuracies': val_accuracies,
                     'config': vars(args),
-                    'tokenizer_chars': tokenizer.tokens
+                    'tokenizer_type': 'number' if isinstance(tokenizer, NumberTokenizer) else 'char',
+                    'tokenizer_chars': tokenizer.tokens if isinstance(tokenizer, NumberTokenizer) else tokenizer.chars
                 }
                 
                 os.makedirs(args.out_dir, exist_ok=True)
@@ -331,7 +345,8 @@ def train(args):
         'val_losses': val_losses,
         'val_accuracies': val_accuracies,
         'config': vars(args),
-        'tokenizer_chars': tokenizer.tokens
+        'tokenizer_type': 'number' if isinstance(tokenizer, NumberTokenizer) else 'char',
+        'tokenizer_chars': tokenizer.tokens if isinstance(tokenizer, NumberTokenizer) else tokenizer.chars
     }
     torch.save(checkpoint, os.path.join(args.out_dir, 'final_model.pt'))
     print(f"Saved final model to {os.path.join(args.out_dir, 'final_model.pt')}")
@@ -354,13 +369,11 @@ def train(args):
     if '_mod' in operation_moduli:
         operation, moduli_str = operation_moduli.split('_mod')
         operation_title = operation.capitalize()
-        moduli = moduli_str
+        moduli = moduli_str 
+        experiment_name = f"{operation_title} mod {moduli} (batch size={args.batch_size}, n_layer={args.n_layer}), seed={args.seed}"
     else:
-        operation_title = "Unknown"
-        moduli = "Unknown"
-    
-    experiment_name = f"{operation_title} mod {moduli} (batch size={args.batch_size})"
-    
+        experiment_name = f"sanity_check (batch size={args.batch_size}, n_layer={args.n_layer}, mask_first_n={args.mask_first_n})"
+
     plt.subplot(1, 2, 1)
     train_steps = [i * args.log_interval for i in range(len(train_losses))]
     val_steps = [i * args.eval_interval for i in range(len(val_losses))]
@@ -420,8 +433,6 @@ def train(args):
     
     return train_losses, train_accuracies, val_losses, val_accuracies
 
-# -----------------------------------------------------------------------------
-# Argument parser
 def parse_args():
     parser = argparse.ArgumentParser(description='Train transformer on algorithmic tasks')
     
@@ -459,7 +470,6 @@ def parse_args():
     
     return parser.parse_args()
 
-# -----------------------------------------------------------------------------
 if __name__ == '__main__':
     args = parse_args()
     train(args)
