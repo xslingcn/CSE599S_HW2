@@ -37,16 +37,25 @@ python generate_data.py --sanity_check --output_dir data/sanity_check/
 
 ```bash
 # Train on addition (example)
-python train.py --data_dir data/algorithmic/add_mod97 --out_dir out/add_mod97 --n_layer 1 --n_embd 128 --n_head 4 --batch_size 64 --max_steps 100000 --learning_rate 1e-3 --log_interval 100 --eval_interval 1000
+python train.py --data_dir data/algorithmic/add_mod113 --out_dir out/add_mod113_layer2_seed456 --seed 456 --n_layer 2 --n_embd 128 --n_head 4 --batch_size 64 --max_steps 100000 --learning_rate 0.001 --log_interval 1000 --eval_points_per_decade 16
 ```
 
 ### 3. Run Inference
 
 ```bash
-python inference.py --checkpoint out/add_mod97_layer2_seed42/final_model.pt --prompts "23+45=" --max_new_tokens 2
+python inference.py --checkpoint out/divide_mod97_layer2_seed42_batch512/final_model.pt --prompts "91/7=" --max_new_tokens 1
+```
+
+### Experiment Script
+
+Or you can use the provided `run_experiment.py` to view and run experiments.
+
+```bash
+python run_experiment.py --list
 ```
 
 ---
 
 ## Deliverables
+
 View [report.pdf](https://github.com/xslingcn/CSE599S_HW2/blob/main/report.pdf).
