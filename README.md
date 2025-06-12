@@ -43,7 +43,7 @@ python train.py --data_dir data/algorithmic/add_mod97 --out_dir out/add_mod97 --
 ### 3. Run Inference
 
 ```bash
-python inference.py --checkpoint out/add_mod97_layer2_seed42/final_model.pt --prompts "23+45="
+python inference.py --checkpoint out/add_mod97_layer2_seed42/final_model.pt --prompts "23+45=" --max_new_tokens 2
 ```
 
 ---
