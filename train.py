@@ -197,6 +197,32 @@ def train(args):
     ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
     ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
     
+    # Generate logarithmically spaced evaluation steps
+    def generate_log_spaced_steps(max_steps, points_per_decade=8):
+        """Generate logarithmically spaced evaluation steps."""
+        # Start with some initial evaluations
+        eval_steps = [1, 2, 5, 10, 20, 50]
+        
+        # Generate logarithmically spaced points
+        # The multiplier determines density: 10^(1/points_per_decade)
+        multiplier = 10 ** (1.0 / points_per_decade)
+        current = 100
+        while current <= max_steps:
+            eval_steps.append(current)
+            current = int(current * multiplier)
+        
+        # Remove duplicates and sort
+        eval_steps = sorted(list(set(eval_steps)))
+        
+        # Always include the final step
+        if max_steps not in eval_steps:
+            eval_steps.append(max_steps)
+        
+        return eval_steps
+    
+    eval_steps = generate_log_spaced_steps(args.max_steps, args.eval_points_per_decade)
+    print(f"Will evaluate at {len(eval_steps)} logarithmically spaced steps")
+    
     # Load data
     print(f"Loading data from {args.data_dir}")
     with open(os.path.join(args.data_dir, 'train.txt'), 'r') as f:
@@ -252,7 +278,7 @@ def train(args):
     )
     
     # Initialize GradScaler for mixed precision
-    scaler = torch.cuda.amp.GradScaler('cuda', enabled=(dtype == 'float16'))
+    scaler = torch.amp.GradScaler('cuda', enabled=(dtype == 'float16'))
     
     # Training loop
     train_loader_iter = iter(train_loader)
@@ -260,6 +286,7 @@ def train(args):
     train_accuracies = []
     val_losses = []
     val_accuracies = []
+    eval_steps_recorded = []  # Keep track of which steps we evaluated at
     
     print(f"Starting training for {args.max_steps} steps")
     
@@ -298,38 +325,20 @@ def train(args):
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
         
-        # Logging
-        if step % args.log_interval == 0:
+        # Evaluate at logarithmically spaced steps or at step 0
+        if step == 0 or step in eval_steps:
             train_losses.append(loss.item())
             train_accuracies.append(accuracy.item())
-            print(f"Step {step}: train loss {loss.item():.4f}, train acc {accuracy.item():.4f}")
-        
-        # Validation
-        if step % args.eval_interval == 0:
+            eval_steps_recorded.append(step)
+
             val_loss, val_acc = estimate_loss(model, val_loader, ctx, device, args)
             val_losses.append(val_loss)
             val_accuracies.append(val_acc)
-            print(f"Step {step}: val loss {val_loss:.4f}, val acc {val_acc:.4f}")
+
+            if step % args.log_interval == 0:
+                print(f"Step {step}: train loss {loss.item():.4f}, train acc {accuracy.item():.4f}")
+                print(f"Step {step}: val loss {val_loss:.4f}, val acc {val_acc:.4f}")
             
-            # Optionally save periodic checkpoint
-            if args.save_periodic and step > 0 and step % args.save_interval == 0:
-                checkpoint = {
-                    'model': model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'model_args': model_args,
-                    'step': step,
-                    'train_losses': train_losses,
-                    'train_accuracies': train_accuracies,
-                    'val_losses': val_losses,
-                    'val_accuracies': val_accuracies,
-                    'config': vars(args),
-                    'tokenizer_type': 'number' if isinstance(tokenizer, NumberTokenizer) else 'char',
-                    'tokenizer_chars': tokenizer.tokens if isinstance(tokenizer, NumberTokenizer) else tokenizer.chars
-                }
-                
-                os.makedirs(args.out_dir, exist_ok=True)
-                torch.save(checkpoint, os.path.join(args.out_dir, f'ckpt_step_{step}.pt'))
-                print(f"Saved checkpoint at step {step}")
     
     print("Training completed!")
     
@@ -375,8 +384,9 @@ def train(args):
         experiment_name = f"sanity_check (batch size={args.batch_size}, n_layer={args.n_layer}, mask_first_n={args.mask_first_n})"
 
     plt.subplot(1, 2, 1)
-    train_steps = [i * args.log_interval for i in range(len(train_losses))]
-    val_steps = [i * args.eval_interval for i in range(len(val_losses))]
+    # Use the actual recorded evaluation steps
+    train_steps = eval_steps_recorded
+    val_steps = eval_steps_recorded
     
     # Filter out step 0 for log scale
     train_steps_plot = [s for s in train_steps if s > 0]
@@ -459,9 +469,7 @@ def parse_args():
     
     # Logging arguments
     parser.add_argument('--log_interval', type=int, default=100, help='Log training metrics every N steps')
-    parser.add_argument('--eval_interval', type=int, default=1000, help='Evaluate on validation set every N steps')
-    parser.add_argument('--save_periodic', action='store_true', help='Save periodic checkpoints during training')
-    parser.add_argument('--save_interval', type=int, default=10000, help='Save checkpoint every N steps (if save_periodic is True)')
+    parser.add_argument('--eval_points_per_decade', type=float, default=16, help='Number of evaluation points per order of magnitude (10x) on log scale')
     
     # Other arguments
     parser.add_argument('--seed', type=int, default=42, help='Random seed')

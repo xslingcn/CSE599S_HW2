@@ -1,0 +1,24 @@
+Experiment: subtract_mod97_layer2_seed42
+Started at: 2025-06-11 21:40:28
+Command: python train.py --data_dir data/algorithmic/subtract_mod97 --out_dir out/subtract_mod97_layer2_seed42 --seed 42 --n_layer 2 --n_embd 128 --n_head 4 --batch_size 64 --max_steps 100000 --learning_rate 0.001 --log_interval 1000 --eval_points_per_decade 16
+============================================================
+
+Will evaluate at 56 logarithmically spaced steps
+Loading data from data/algorithmic/subtract_mod97
+Using NumberTokenizer for arithmetic data
+Vocabulary size: 102
+Initializing 2-layer model
+number of parameters: 0.41M
+num decayed parameter tensors: 10, with 410,368 parameters
+num non-decayed parameter tensors: 5, with 640 parameters
+using fused AdamW: True
+Starting training for 100000 steps
+Step 0: train loss 4.6265, train acc 0.0000
+Step 0: val loss 4.6544, val acc 0.0122
+Training completed!
+Saved final model to out/subtract_mod97_layer2_seed42/final_model.pt
+Saved training curves to out/subtract_mod97_layer2_seed42/training_curves.png
+
+============================================================
+Completed at: 2025-06-11 21:49:59
+Return code: 0

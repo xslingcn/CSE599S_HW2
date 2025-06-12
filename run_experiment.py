@@ -10,7 +10,8 @@ class ExperimentRunner:
         self.experiments = self._define_experiments()
         
     def _define_experiments(self) -> List[Dict[str, Any]]:
-        """Define all experiments to run."""
+        """Define all experiments to run.
+        """
         experiments = []
         
         # 1.5 Sanity check experiments
@@ -19,11 +20,11 @@ class ExperimentRunner:
             'n_embd': 32,
             'n_head': 4,
             'max_steps': 1000,
-            'log_interval': 10,
-            'eval_interval': 100,
+            'log_interval': 100,
             'batch_size': 64,
             'learning_rate': 3e-4,
             'seed': 42,
+            'eval_points_per_decade': 16,
         }
         
         # Basic sanity check
@@ -49,10 +50,10 @@ class ExperimentRunner:
         common_params = {
             'max_steps': 100000,
             'learning_rate': 1e-3,
-            'log_interval': 100,
-            'eval_interval': 1000,
+            'log_interval': 1000,
             'n_embd': 128,
             'n_head': 4,
+            'eval_points_per_decade': 16,
         }
         
         seeds = [42, 123, 456]
@@ -140,7 +141,6 @@ class ExperimentRunner:
             '--max_steps', str(exp['max_steps']),
             '--learning_rate', str(exp['learning_rate']),
             '--log_interval', str(exp['log_interval']),
-            '--eval_interval', str(exp['eval_interval']),
         ]
         
         # Optional parameters
@@ -152,6 +152,8 @@ class ExperimentRunner:
             cmd.extend(['--beta2', str(exp['beta2'])])
         if 'mask_first_n' in exp:
             cmd.extend(['--mask_first_n', str(exp['mask_first_n'])])
+        if 'eval_points_per_decade' in exp:
+            cmd.extend(['--eval_points_per_decade', str(exp['eval_points_per_decade'])])
         
         # Run the experiment and capture output
         try:

@@ -1,0 +1,24 @@
+Experiment: subtract_mod113_layer2_seed123
+Started at: 2025-06-11 22:39:16
+Command: python train.py --data_dir data/algorithmic/subtract_mod113 --out_dir out/subtract_mod113_layer2_seed123 --seed 123 --n_layer 2 --n_embd 128 --n_head 4 --batch_size 64 --max_steps 100000 --learning_rate 0.001 --log_interval 1000 --eval_points_per_decade 16
+============================================================
+
+Will evaluate at 56 logarithmically spaced steps
+Loading data from data/algorithmic/subtract_mod113
+Using NumberTokenizer for arithmetic data
+Vocabulary size: 118
+Initializing 2-layer model
+number of parameters: 0.41M
+num decayed parameter tensors: 10, with 412,416 parameters
+num non-decayed parameter tensors: 5, with 640 parameters
+using fused AdamW: True
+Starting training for 100000 steps
+Step 0: train loss 4.8462, train acc 0.0000
+Step 0: val loss 4.8218, val acc 0.0068
+Training completed!
+Saved final model to out/subtract_mod113_layer2_seed123/final_model.pt
+Saved training curves to out/subtract_mod113_layer2_seed123/training_curves.png
+
+============================================================
+Completed at: 2025-06-11 22:48:40
+Return code: 0

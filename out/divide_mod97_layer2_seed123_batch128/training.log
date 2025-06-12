@@ -1,0 +1,24 @@
+Experiment: divide_mod97_layer2_seed123_batch128
+Started at: 2025-06-11 23:57:31
+Command: python train.py --data_dir data/algorithmic/divide_mod97 --out_dir out/divide_mod97_layer2_seed123_batch128 --seed 123 --n_layer 2 --n_embd 128 --n_head 4 --batch_size 128 --max_steps 100000 --learning_rate 0.001 --log_interval 1000 --weight_decay 1.0 --beta1 0.9 --beta2 0.98 --eval_points_per_decade 16
+============================================================
+
+Will evaluate at 56 logarithmically spaced steps
+Loading data from data/algorithmic/divide_mod97
+Using NumberTokenizer for arithmetic data
+Vocabulary size: 102
+Initializing 2-layer model
+number of parameters: 0.41M
+num decayed parameter tensors: 10, with 410,368 parameters
+num non-decayed parameter tensors: 5, with 640 parameters
+using fused AdamW: True
+Starting training for 100000 steps
+Step 0: train loss 4.6819, train acc 0.0000
+Step 0: val loss 4.6591, val acc 0.0058
+Training completed!
+Saved final model to out/divide_mod97_layer2_seed123_batch128/final_model.pt
+Saved training curves to out/divide_mod97_layer2_seed123_batch128/training_curves.png
+
+============================================================
+Completed at: 2025-06-12 00:08:44
+Return code: 0

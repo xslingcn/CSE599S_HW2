@@ -1,0 +1,26 @@
+Experiment: sanity_check
+Started at: 2025-06-11 19:39:12
+Command: python train.py --data_dir data/sanity_check --out_dir out/sanity_check --seed 42 --n_layer 1 --n_embd 32 --n_head 4 --batch_size 64 --max_steps 1000 --learning_rate 0.0003 --log_interval 100 --eval_points_per_decade 16
+============================================================
+
+Will evaluate at 24 logarithmically spaced steps
+Loading data from data/sanity_check
+Using CharTokenizer for text data
+Vocabulary size: 15
+Initializing 1-layer model
+number of parameters: 0.01M
+num decayed parameter tensors: 6, with 13,792 parameters
+num non-decayed parameter tensors: 3, with 96 parameters
+using fused AdamW: True
+Starting training for 1000 steps
+Step 0: train loss 2.7670, train acc 0.0000
+Step 0: val loss 2.7386, val acc 0.0000
+Step 100: train loss 1.5380, train acc 1.0000
+Step 100: val loss 1.5302, val acc 1.0000
+Training completed!
+Saved final model to out/sanity_check/final_model.pt
+Saved training curves to out/sanity_check/training_curves.png
+
+============================================================
+Completed at: 2025-06-11 19:39:28
+Return code: 0
